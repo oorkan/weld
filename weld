@@ -1,0 +1,192 @@
+#! /usr/bin/env bash
+
+# define/read variables
+. .env
+
+# colors
+red="\e[1;31m"
+green="\e[1;32m"
+yellow="\e[1;33m"
+clr="\e[1;0m"
+
+# formatting
+bold="\e[1m"
+italic="\e[3m"
+
+# strings
+status_done="${green}\nDone ✓${clr}\n\n"
+status_importing="${yellow}\nImporting...${clr}\n\n"
+status_wiping="${red}Wiping...${clr}"
+status_updating="${yellow}\nUpdating...${clr}\n\n"
+
+generateHostsConfig() {
+    # hosts
+    touch hosts
+    > hosts true
+    tee -a hosts > /dev/null <<EOT
+# Place me in your /etc/hosts file
+127.0.0.1    $LOCAL_DOMAIN
+EOT
+}
+
+removeDanglingImages() {
+    # remove dangling images
+    docker image prune -f
+}
+
+autoincludeCoreWP() {
+    docker cp "$WORDPRESS_CONTAINER_NAME":/usr/src/wordpress/. "$WORDPRESS_WORKDIR"
+}
+
+while :; do
+    case $1 in
+
+        generate-wp-salts)
+            curl https://api.wordpress.org/secret-key/1.1/salt/ > wp.salts
+            printf "WordPress salts are generated into the wp.salts file. \n"
+
+            ;;
+
+        setup)
+            # detect host os
+            touch host_ostype
+            echo "$OSTYPE" > host_ostype
+
+            #
+            mkdir $WORDPRESS_WORKDIR
+
+            # build and run
+            eval "docker-compose up -d --build"
+
+            # autoinclude WordPress core files and directories
+            autoincludeCoreWP
+
+            # hosts
+            generateHostsConfig
+
+            # restart docker-compose
+            $0 restart
+
+            # remove dangling images
+            removeDanglingImages
+
+	        ;;
+
+        up)
+            printf "%b\nBringing up the website.%b\n\n" "$green" "$clr"
+            eval "docker-compose up -d"
+            printf "%b" "$status_done"
+
+            ;;
+
+        down)
+            printf "%b\nBringing down the website.%b\n\n" "$yellow" "$clr"
+            eval "docker-compose down"
+            printf "%b" "$status_done"
+
+            ;;
+
+        restart)
+            printf "%b\nRestarting the website.%b\n\n" "$yellow" "$clr"
+            eval "docker-compose restart"
+            printf "%b" "$status_done"
+
+            ;;
+
+        full-reload)
+            printf "%b\nReloading the website.%b\n" "$yellow" "$clr"
+            printf "└─ This is going to remove and recreate your docker containers\n"
+            printf "   and update your environment variables.\n\n"
+            $0 down
+            $0 up
+
+            printf "%b" "$status_done"
+
+            ;;
+
+        db)
+            if [ "import" == "$2" ]; then
+                if [ -n "$3" ]; then
+                    printf "%b" "$status_importing"
+                    docker exec -i "$MYSQL_CONTAINER_NAME" mysql --protocol=tcp --user=root --password="$MYSQL_ROOT_PASSWORD" --default-character-set=utf8 --comments --database="$MYSQL_DATABASE" < "$3"
+                    printf "%b" "$status_done"
+
+                    shift
+                fi
+                shift
+            fi
+
+            if [ "wipe" == "$2" ]; then
+                printf "\n%bAre you sure? This is going to wipe out your database.\n" "$yellow"
+                printf "%b(Hit Ctrl+C to exit or Enter to continue)\n" "$clr"
+                read -r
+
+                printf "%b" "$status_wiping"
+                docker exec -i "$MYSQL_CONTAINER_NAME" mysql --protocol=tcp --user=root --password="$MYSQL_ROOT_PASSWORD" --default-character-set=utf8 --comments --database=mysql -e "DROP DATABASE $MYSQL_DATABASE; CREATE DATABASE $MYSQL_DATABASE"
+                printf "%b" "$status_done"
+
+                shift
+            fi
+
+            if [ "ready" == "$2" ]; then
+                eval "docker-compose logs" | grep "mysql" | grep "ready" | head -1
+
+                shift
+            fi
+
+            ;;
+
+        -h | --help)
+            printf "\n"
+            printf "%bUSAGE%b\n" "$bold" "$clr"
+            printf "  ./weld <command> [OPTIONS] [<subcommand>] [FLAGS]\n\n"
+
+            printf "%bCOMMANDS%b\n" "$bold" "$clr"
+            printf "  setup:  Sets up the project\n\n"
+            printf "    OPTIONS\n"
+            printf "      \n\n"
+
+            printf "  db:\n\n"
+            printf "    SUBCOMMANDS\n"
+            printf "      ready:   Checks if the database is ready to accept connections\n"
+            printf "      import:  Imports the specified SQL dump file\n"
+            printf "                 %bEx.: ./weld db import backups/sqldump.sql%b\n" "$italic" "$clr"
+            printf "      wipe:    Wipes the database by removing all tables and data.\n"
+            printf "               Required to run before importing a new SQL dump file\n\n"
+
+            printf "  up:           Brings the project up\n\n"
+            printf "  down:         Brings the project down\n\n"
+            printf "  restart:      Restarts the project\n\n"
+            printf "  full-reload:  Reloads the project. Required to run after editing the .env \n\n"
+
+            printf "  generate-wp-salts: Generates WordPress salts into the wp.salts file \n\n"
+
+            printf "%bFLAGS%b\n" "$bold" "$clr"
+            printf "  -h, --help:  Show the help\n\n"
+
+            ;;
+
+        --) #) End of all options.
+            shift
+            break
+
+            ;;
+
+        -?*)
+            printf "%bWARN:%b Unknown option (ignored): %s\n" "$yellow" "$clr" "$1" >&2
+
+            ;;
+
+        ?*)
+            printf "%bWARN:%b Unknown command (ignored): %s\n" "$yellow" "$clr" "$1" >&2
+
+            ;;
+
+        *) #) Default case: If no more options then break out of the loop.
+            break
+
+            ;;
+    esac
+
+    shift
+done

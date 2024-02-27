@@ -1,0 +1,16 @@
+# Your editor should support .editorconfig files for this config to work.
+# Please see the list of supported editors here: https://editorconfig.org/
+
+# If your editor doesn't support .editorconfig files, you can use a plugin.
+# Please see the list of plugins per editor here: https://editorconfig.org/
+
+# If you are using VSCode, you need to have the following extension installed and enabled:
+# https://marketplace.visualstudio.com/items?itemName=EditorConfig.EditorConfig
+
+[*]
+charset = utf-8 # currently not supported
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true

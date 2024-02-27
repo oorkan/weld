@@ -1,0 +1,16 @@
+*
+!.gitignore
+
+!docs
+!.editorconfig
+!.env.example
+!.gitattributes
+!.gitattributes.example
+!COPYRIGHT
+!docker-compose.yml
+!init.sh
+!install-composer.sh
+!LICENSE
+!README.md
+!weld
+!wordpress.dockerfile
